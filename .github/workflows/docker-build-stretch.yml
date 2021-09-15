@@ -5,11 +5,11 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Create and publish a Docker image
+name: Create and publish Debian Stretch based Docker image for onedrive
 
 on:
   push:
-    branches: ['docker-build-test']
+    branches: ['master']
 
 env:
   REGISTRY: ghcr.io
@@ -43,7 +43,7 @@ jobs:
         uses: docker/build-push-action@ad44023a93711e3deb337508980b4b5e9bcdc5dc
         with:
           context: .
-          file: contrib/docker/Dockerfile-stretch
+          file: contrib/docker/Dockerfile-stretch-custom
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: stretch-latest
           labels: ${{ steps.meta.outputs.labels }}
