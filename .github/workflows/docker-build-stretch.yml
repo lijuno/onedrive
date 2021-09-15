@@ -45,5 +45,5 @@ jobs:
           context: .
           file: contrib/docker/Dockerfile-stretch-custom
           push: true
-          tags: stretch-latest
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:stretch-latest
           labels: ${{ steps.meta.outputs.labels }}
