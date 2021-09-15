@@ -9,7 +9,7 @@ name: Create and publish Debian Stretch based Docker image for onedrive
 
 on:
   push:
-    branches: ['master', 'fix-gh-docker-tag']
+    branches: ['master']
 
 env:
   REGISTRY: ghcr.io
