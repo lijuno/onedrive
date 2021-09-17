@@ -1,6 +1,6 @@
 # -*-Dockerfile-*-
 # Changelog:
-#   - Remove entrypoint
+#   - Run arbitrary command with docker-run
 
 FROM debian:stretch
 RUN apt update && \
@@ -17,8 +17,12 @@ RUN cd /usr/src/onedrive/ && \
     make install
 
 FROM debian:stretch-slim
+ENTRYPOINT ["/entrypoint.sh"]
 RUN apt update && \
     apt install -y gosu libcurl3 libsqlite3-0 && \
     rm -rf /var/*/apt && \
     mkdir -p /onedrive/conf /onedrive/data
+COPY contrib/docker/entrypoint-custom.sh /entrypoint.sh
+RUN chmod a+x /entrypoint.sh
+CMD ["echo Hello! You can run your own command with docker-run."]
 COPY --from=0 /usr/local/bin/onedrive /usr/local/bin/
