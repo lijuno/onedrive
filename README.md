@@ -1,6 +1,7 @@
 # OneDrive Client for Linux
 
-- Upstream README: https://github.com/abraunegg/onedrive/blob/master/README.md
+
+- Goal: back up OneDrive files in a cron-friendly single command.
 
 - Docker images: https://github.com/lijuno/onedrive/pkgs/container/onedrive
 
@@ -15,6 +16,7 @@
       ghcr.io/lijuno/onedrive:stretch-latest \
       bash
   ```
+  
   - Dryrun the download:
   ```
   docker run --rm \
@@ -25,4 +27,8 @@
       ghcr.io/lijuno/onedrive:stretch-latest \
       "onedrive --synchronize --download-only --confdir /onedrive/conf --syncdir /onedrive/data --dry-run"
   ```
-  - Remove `--dry-run` to download for real; remove `--download-only` for two-way sync.
+  
+  - Remove `--dry-run` to download for real; remove `--download-only` for two-way sync. The Docker command can be used in a cron job.
+
+- Docs:
+  - Upstream README: https://github.com/abraunegg/onedrive/blob/master/README.md
