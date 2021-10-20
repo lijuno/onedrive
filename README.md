@@ -1,7 +1,7 @@
 # OneDrive Client for Linux
 
 
-- Goal: back up OneDrive files in a cron-friendly single command.
+- Goal: back up OneDrive files in a cron-friendly way, with a single command.
 
 - Docker images: https://github.com/lijuno/onedrive/pkgs/container/onedrive
 
