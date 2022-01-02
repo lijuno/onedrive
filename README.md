@@ -1,13 +1,39 @@
 # OneDrive Client for Linux
-[![Version](https://img.shields.io/github/v/release/abraunegg/onedrive)](https://github.com/abraunegg/onedrive/releases)
-[![Release Date](https://img.shields.io/github/release-date/abraunegg/onedrive)](https://github.com/abraunegg/onedrive/releases)
-[![Travis CI](https://img.shields.io/travis/com/abraunegg/onedrive)](https://travis-ci.com/abraunegg/onedrive/builds)
-[![Docker Build](https://img.shields.io/docker/cloud/automated/driveone/onedrive)](https://hub.docker.com/r/driveone/onedrive)
-[![Docker Pulls](https://img.shields.io/docker/pulls/driveone/onedrive)](https://hub.docker.com/r/driveone/onedrive)
 
-A free Microsoft OneDrive Client which supports OneDrive Personal, OneDrive for Business, OneDrive for Office365 and SharePoint.
+- Goal: back up OneDrive files in a cron-friendly way, with a single command.
 
-This powerful and highly configurable client can run on all major Linux distributions, FreeBSD, or as a Docker container. It supports one-way and two-way sync capabilities and securely connects to Microsoft OneDrive services.
+- Docker images: https://github.com/lijuno/onedrive/pkgs/container/onedrive
+
+- Usage:
+  - For the first run, one needs to run container interatively to set the Microsoft credentials. Assuming the UID and GID of the current user are both 1000:
+  ```
+  docker run --rm -it \
+      -v ${HOME}/onedrive/conf:/onedrive/conf \
+      -v ${HOME}/onedrive/data:/onedrive/data \
+      -e ONEDRIVE_UID:1000 \
+      -e ONEDRIVE_GID:1000 \
+      ghcr.io/lijuno/onedrive:stretch-latest \
+      bash
+  ```
+  
+  - Dryrun the download:
+  ```
+  docker run --rm \
+      -v ${HOME}/onedrive/conf:/onedrive/conf \
+      -v ${HOME}/onedrive/data:/onedrive/data \
+      -e ONEDRIVE_UID:1000 \
+      -e ONEDRIVE_GID:1000 \
+      ghcr.io/lijuno/onedrive:stretch-latest \
+      "onedrive --synchronize --download-only --confdir /onedrive/conf --syncdir /onedrive/data --dry-run"
+  ```
+  
+  - Remove `--dry-run` to download for real; remove `--download-only` for two-way sync. The Docker command can be used in a cron job.
+
+- Docs:
+  - Upstream README: https://github.com/abraunegg/onedrive/blob/master/README.md
+
+
+# Upstream README
 
 This client is a 'fork' of the [skilion](https://github.com/skilion/onedrive) client which was abandoned in 2018.
 
