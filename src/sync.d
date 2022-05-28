@@ -320,7 +320,7 @@ final class SyncEngine
 			if (e.httpStatusCode == 401) {
 				// HTTP request returned status code 401 (Unauthorized)
 				displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-				log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --logout and re-authorise this client.\n");
+				log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --reauth and re-authorise this client.\n");
 				// Must exit here
 				exit(-1);
 			}
@@ -359,7 +359,7 @@ final class SyncEngine
 			if (e.httpStatusCode == 401) {
 				// HTTP request returned status code 401 (Unauthorized)
 				displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-				log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --logout and re-authorise this client.\n");
+				log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --reauth and re-authorise this client.\n");
 				// Must exit here
 				exit(-1);
 			}
@@ -670,7 +670,7 @@ final class SyncEngine
 				if (e.httpStatusCode == 401) {
 					// HTTP request returned status code 401 (Unauthorized)
 					displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-					log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --logout and re-authorise this client.\n");
+					log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --reauth and re-authorise this client.\n");
 					// Must exit here
 					exit(-1);
 				}
@@ -864,7 +864,7 @@ final class SyncEngine
 				if (e.httpStatusCode == 401) {
 					// HTTP request returned status code 401 (Unauthorized)
 					displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-					log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --logout and re-authorise this client.\n");
+					log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --reauth and re-authorise this client.\n");
 					// Must exit here
 					exit(-1);
 				}
@@ -2667,6 +2667,12 @@ final class SyncEngine
 						// Configure the applicable permissions for the folder
 						log.vdebug("Setting directory permissions for: ", path);
 						path.setAttributes(cfg.returnRequiredDirectoryPermisions());
+						// Update the time of the folder to match the last modified time as is provided by OneDrive
+						// If there are any files then downloaded into this folder, the last modified time will get 
+						// updated by the local Operating System with the latest timestamp - as this is normal operation
+						// as the directory has been modified
+						log.vdebug("Setting directory lastModifiedDateTime for: ", path , " to ", item.mtime);
+						setTimes(path, item.mtime, item.mtime);
 					}
 				} catch (FileException e) {
 					// display the error message
@@ -2975,6 +2981,9 @@ final class SyncEngine
 		if (!downloadFailed) {
 			writeln("done.");
 			log.fileOnly("Downloading file ", path, " ... done.");
+		} else {
+			writeln("failed!");
+			log.fileOnly("Downloading file ", path, " ... failed!");
 		}
 	}
 
@@ -3469,16 +3478,23 @@ final class SyncEngine
 	{
 		assert(item.type == ItemType.dir);
 		if (exists(path)) {
-			if (!isDir(path)) {
-				log.vlog("The item was a directory but now it is a file");
-				uploadDeleteItem(item, path);
-				uploadNewFile(path);
-			} else {
-				log.vlog("The directory has not changed");
-				// loop through the children
-				foreach (Item child; itemdb.selectChildren(item.driveId, item.id)) {
-					uploadDifferences(child);
+			// Fix https://github.com/abraunegg/onedrive/issues/1915
+			try {
+				if (!isDir(path)) {
+					log.vlog("The item was a directory but now it is a file");
+					uploadDeleteItem(item, path);
+					uploadNewFile(path);
+				} else {
+					log.vlog("The directory has not changed");
+					// loop through the children
+					foreach (Item child; itemdb.selectChildren(item.driveId, item.id)) {
+						uploadDifferences(child);
+					}
 				}
+			} catch (FileException e) {
+				// display the error message
+				displayFileSystemErrorMessage(e.msg, getFunctionName!({}));
+				return;
 			}
 		} else {
 			// Directory does not exist locally
@@ -5873,7 +5889,7 @@ final class SyncEngine
 				log.error("ERROR: Query of OneDrive for Office 365 Library Name failed");
 				if (e.httpStatusCode == 403) {
 					// Forbidden - most likely authentication scope needs to be updated
-					log.error("ERROR: Authentication scope needs to be updated. Use --logout and re-authenticate client.");
+					log.error("ERROR: Authentication scope needs to be updated. Use --reauth and re-authenticate client.");
 					return;
 				}
 				// HTTP request returned status code 429 (Too Many Requests)
@@ -6104,8 +6120,8 @@ final class SyncEngine
 		} 
 	}
 	
-	// Query OneDrive for a URL path of a file
-	void queryOneDriveForFileURL(string localFilePath, string syncDir)
+	// Query OneDrive for file details of a given path
+	void queryOneDriveForFileDetails(string localFilePath, string syncDir, string outputType)
 	{
 		// Query if file is valid locally
 		if (exists(localFilePath)) {
@@ -6127,21 +6143,41 @@ final class SyncEngine
 						displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
 						return;
 					}
-
-					if ((fileDetails.type() == JSONType.object) && ("webUrl" in fileDetails)) {
-						// Valid JSON object
-						writeln(fileDetails["webUrl"].str);
+					
+					// debug output of response
+					log.vdebug("API Response: ", fileDetails);
+					
+					// What sort of response to we generate
+					// --get-file-link response
+					if (outputType == "URL") {
+						if ((fileDetails.type() == JSONType.object) && ("webUrl" in fileDetails)) {
+							// Valid JSON object
+							writeln(fileDetails["webUrl"].str);
+						}
 					}
+					
+					// --modified-by response
+					if (outputType == "ModifiedBy") {
+						if ((fileDetails.type() == JSONType.object) && ("lastModifiedBy" in fileDetails)) {
+							// Valid JSON object
+							writeln("Last modified:    ", fileDetails["lastModifiedDateTime"].str);
+							writeln("Last modified by: ", fileDetails["lastModifiedBy"]["user"]["displayName"].str);
+							// if 'email' provided, add this to the output
+							if ("email" in fileDetails["lastModifiedBy"]["user"]) {
+								writeln("Email Address:    ", fileDetails["lastModifiedBy"]["user"]["email"].str);
+							}
+						}
+					}	
 				}
 			}
-			// was file found?
+			// was path found?
 			if (!fileInDB) {
 				// File has not been synced with OneDrive
-				log.error("File has not been synced with OneDrive: ", localFilePath);
+				log.error("Path has not been synced with OneDrive: ", localFilePath);
 			}
 		} else {
 			// File does not exist locally
-			log.error("File not found on local system: ", localFilePath);
+			log.error("Path not found on local system: ", localFilePath);
 		}
 	}
 	
@@ -6632,64 +6668,7 @@ final class SyncEngine
 
 		for (;;) {
 			// query children
-			try {
-				thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink);
-			} catch (OneDriveException e) {
-				// OneDrive threw an error
-				log.vdebug("------------------------------------------------------------------");
-				log.vdebug("Query Error: thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink)");
-				log.vdebug("driveId: ", driveId);
-				log.vdebug("idToQuery: ", idToQuery);
-				log.vdebug("nextLink: ", nextLink);
-				
-				// HTTP request returned status code 404 (Not Found)
-				if (e.httpStatusCode == 404) {
-					// Stop application
-					log.log("\n\nOneDrive returned a 'HTTP 404 - Item not found'");
-					log.log("The item id to query was not found on OneDrive");
-					log.log("\nRemove your '", cfg.databaseFilePath, "' file and try to sync again\n");
-				}
-				
-				// HTTP request returned status code 429 (Too Many Requests)
-				if (e.httpStatusCode == 429) {
-					// HTTP request returned status code 429 (Too Many Requests). We need to leverage the response Retry-After HTTP header to ensure minimum delay until the throttle is removed.
-					handleOneDriveThrottleRequest();
-					log.vdebug("Retrying original request that generated the OneDrive HTTP 429 Response Code (Too Many Requests) - attempting to query OneDrive drive children");
-				}
-				
-				// HTTP request returned status code 500 (Internal Server Error)
-				if (e.httpStatusCode == 500) {
-					// display what the error is
-					displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-				}
-				
-				// HTTP request returned status code 504 (Gateway Timeout) or 429 retry
-				if ((e.httpStatusCode == 429) || (e.httpStatusCode == 504)) {
-					// re-try the specific changes queries	
-					if (e.httpStatusCode == 504) {
-						log.log("OneDrive returned a 'HTTP 504 - Gateway Timeout' when attempting to query OneDrive drive children - retrying applicable request");
-						log.vdebug("thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink) previously threw an error - retrying");
-						// The server, while acting as a proxy, did not receive a timely response from the upstream server it needed to access in attempting to complete the request. 
-						log.vdebug("Thread sleeping for 30 seconds as the server did not receive a timely response from the upstream server it needed to access in attempting to complete the request");
-						Thread.sleep(dur!"seconds"(30));
-					}
-					// re-try original request - retried for 429 and 504
-					try {
-						log.vdebug("Retrying Query: thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink)");
-						thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink);
-						log.vdebug("Query 'thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink)' performed successfully on re-try");
-					} catch (OneDriveException e) {
-						// display what the error is
-						log.vdebug("Query Error: thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink) on re-try after delay");
-						// error was not a 504 this time
-						displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-					}
-				} else {
-					// Default operation if not 404, 410, 429, 500 or 504 errors
-					// display what the error is
-					displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-				}
-			}
+			thisLevelChildren = queryThisLevelChildren(driveId, idToQuery, nextLink);
 			
 			// process this level children
 			if (!childParentPath.empty) {
@@ -6734,6 +6713,64 @@ final class SyncEngine
 		return thisLevelChildrenData;
 	}
 	
+	// Query from OneDrive the child objects for this element
+	JSONValue queryThisLevelChildren(const(char)[] driveId, const(char)[] idToQuery, string nextLink)
+	{
+		JSONValue thisLevelChildren;
+	
+		// query children
+		try {
+			// attempt API call
+			log.vdebug("Attempting Query: thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink)");
+			thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink);
+			log.vdebug("Query 'thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink)' performed successfully");
+		} catch (OneDriveException e) {
+			// OneDrive threw an error
+			log.vdebug("------------------------------------------------------------------");
+			log.vdebug("Query Error: thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink)");
+			log.vdebug("driveId: ", driveId);
+			log.vdebug("idToQuery: ", idToQuery);
+			log.vdebug("nextLink: ", nextLink);
+			
+			// HTTP request returned status code 404 (Not Found)
+			if (e.httpStatusCode == 404) {
+				// Stop application
+				log.log("\n\nOneDrive returned a 'HTTP 404 - Item not found'");
+				log.log("The item id to query was not found on OneDrive");
+				log.log("\nRemove your '", cfg.databaseFilePath, "' file and try to sync again\n");
+			}
+			
+			// HTTP request returned status code 429 (Too Many Requests)
+			if (e.httpStatusCode == 429) {
+				// HTTP request returned status code 429 (Too Many Requests). We need to leverage the response Retry-After HTTP header to ensure minimum delay until the throttle is removed.
+				handleOneDriveThrottleRequest();
+				log.vdebug("Retrying original request that generated the OneDrive HTTP 429 Response Code (Too Many Requests) - attempting to query OneDrive drive children");
+			}
+			
+			// HTTP request returned status code 504 (Gateway Timeout) or 429 retry
+			if ((e.httpStatusCode == 429) || (e.httpStatusCode == 504)) {
+				// re-try the specific changes queries	
+				if (e.httpStatusCode == 504) {
+					// transient error - try again in 30 seconds
+					log.log("OneDrive returned a 'HTTP 504 - Gateway Timeout' when attempting to query OneDrive drive children - retrying applicable request");
+					log.vdebug("thisLevelChildren = onedrive.listChildren(driveId, idToQuery, nextLink) previously threw an error - retrying");
+					// The server, while acting as a proxy, did not receive a timely response from the upstream server it needed to access in attempting to complete the request. 
+					log.vdebug("Thread sleeping for 30 seconds as the server did not receive a timely response from the upstream server it needed to access in attempting to complete the request");
+					Thread.sleep(dur!"seconds"(30));
+				}
+				// re-try original request - retried for 429 and 504 - but loop back calling this function 
+				log.vdebug("Retrying Query: thisLevelChildren = queryThisLevelChildren(driveId, idToQuery, nextLink)");
+				thisLevelChildren = queryThisLevelChildren(driveId, idToQuery, nextLink);	
+			} else {
+				// Default operation if not 404, 429 or 504 errors
+				// display what the error is
+				displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
+			}
+		}
+		// return response
+		return thisLevelChildren;
+	}
+	
 	// OneDrive Business Shared Folder support
 	void listOneDriveBusinessSharedFolders()
 	{
@@ -6747,7 +6784,7 @@ final class SyncEngine
 			if (e.httpStatusCode == 401) {
 				// HTTP request returned status code 401 (Unauthorized)
 				displayOneDriveErrorMessage(e.msg, getFunctionName!({}));
-				log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --logout and re-authorise this client.\n");
+				log.errorAndNotify("\nERROR: Check your configuration as your refresh_token may be empty or invalid. You may need to issue a --reauth and re-authorise this client.\n");
 				// Must exit here
 				exit(-1);
 			}

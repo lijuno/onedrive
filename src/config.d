@@ -76,9 +76,10 @@ final class Config
 		longValues["skip_size"] = 0;
 		longValues["min_notify_changes"] = 5;
 		longValues["monitor_log_frequency"] = 5;
-		// Number of n sync runs before performing a full local scan of sync_dir
-		// By default 10 which means every ~7.5 minutes a full disk scan of sync_dir will occur
-		longValues["monitor_fullscan_frequency"] = 10;
+		// Number of N sync runs before performing a full local scan of sync_dir
+		// By default 12 which means every ~60 minutes a full disk scan of sync_dir will occur 
+		// 'monitor_interval' * 'monitor_fullscan_frequency' = 3600 = 1 hour
+		longValues["monitor_fullscan_frequency"] = 12;
 		// Number of children in a path that is locally removed which will be classified as a 'big data delete'
 		longValues["classify_as_big_delete"] = 1000;
 		// Delete source after successful transfer
@@ -90,6 +91,8 @@ final class Config
 		stringValues["application_id"] = "";
 		// allow for resync to be set via config file
 		boolValues["resync"] = false;
+		// resync now needs to be acknowledged based on the 'risk' of using it
+		boolValues["resync_auth"] = false;
 		// Ignore data safety checks and overwrite local data rather than preserve & rename
 		// This is a config file option ONLY
 		boolValues["bypass_data_preservation"] = false;
@@ -213,8 +216,8 @@ final class Config
 		}
 
 		// configDirName has a trailing /
-		log.vlog("Using 'user' Config Dir: ", configDirName);
-		log.vlog("Using 'system' Config Dir: ", systemConfigDirName);
+		if (!configDirName.empty) log.vlog("Using 'user' Config Dir: ", configDirName);
+		if (!systemConfigDirName.empty) log.vlog("Using 'system' Config Dir: ", systemConfigDirName);
 
 		// Update application set variables based on configDirName
 		refreshTokenFilePath = buildNormalizedPath(configDirName ~ "/refresh_token");
@@ -284,6 +287,7 @@ final class Config
 		stringValues["create_share_link"] = "";
 		stringValues["destination_directory"] = "";
 		stringValues["get_file_link"]     = "";
+		stringValues["modified_by"]       = "";
 		stringValues["get_o365_drive_id"] = "";
 		stringValues["remove_directory"]  = "";
 		stringValues["single_directory"]  = "";
@@ -294,10 +298,12 @@ final class Config
 		boolValues["display_sync_status"] = false;
 		boolValues["print_token"]         = false;
 		boolValues["logout"]              = false;
+		boolValues["reauth"]              = false;
 		boolValues["monitor"]             = false;
 		boolValues["synchronize"]         = false;
 		boolValues["force"]               = false;
 		boolValues["list_business_shared_folders"] = false;
+		boolValues["force_sync"]          = false;
 
 		// Application Startup option validation
 		try {
@@ -367,6 +373,9 @@ final class Config
 				"force",
 					"Force the deletion of data when a 'big delete' is detected",
 					&boolValues["force"],
+				"force-sync",
+					"Force a synchronization of a specific folder, only when using --synchronize --single-directory and ignore all non-default skip_dir and skip_file rules",
+					&boolValues["force_sync"],
 				"get-file-link",
 					"Display the file link of a synced file",
 					&stringValues["get_file_link"],
@@ -385,6 +394,9 @@ final class Config
 				"min-notify-changes",
 					"Minimum number of pending incoming changes necessary to trigger a desktop notification",
 					&longValues["min_notify_changes"],
+				"modified-by",
+					"Display the last modified by details of a given path",
+					&stringValues["modified_by"],
 				"monitor|m",
 					"Keep monitoring for local and remote changes",
 					&boolValues["monitor"],
@@ -406,9 +418,15 @@ final class Config
 				"print-token",
 					"Print the access token, useful for debugging",
 					&boolValues["print_token"],
+				"reauth",
+					"Reauthenticate the client with OneDrive",
+					&boolValues["reauth"],
 				"resync",
 					"Forget the last saved state, perform a full sync",
 					&boolValues["resync"],
+				"resync-auth",
+					"Approve the use of performing a --resync action",
+					&boolValues["resync_auth"],
 				"remove-directory",
 					"Remove a directory on OneDrive - no sync will be performed.",
 					&stringValues["remove_directory"],
@@ -535,9 +553,19 @@ final class Config
 	private bool load(string filename)
 	{
 		// configure function variables
+		try {
+			readText(filename);
+		} catch (std.file.FileException e) {
+			// Unable to access required file
+			log.error("ERROR: Unable to access ", e.msg);
+			// Use exit scopes to shutdown API
+			return false;
+		}
+		
+		// We were able to readText the config file - so, we should be able to open and read it
 		auto file = File(filename, "r");
 		string lineBuffer;
-
+		
 		// configure scopes
 		// - failure
 		scope(failure) {
@@ -699,11 +727,27 @@ final class Config
 		}
 		return configuredFilePermissionMode;
 	}
+	
+	void resetSkipToDefaults() {
+		// reset skip_file and skip_dir to application defaults
+		// skip_file
+		log.vdebug("original skip_file: ", getValueString("skip_file"));
+		log.vdebug("resetting skip_file");
+		setValueString("skip_file", defaultSkipFile);
+		log.vdebug("reset skip_file: ", getValueString("skip_file"));
+		// skip_dir
+		log.vdebug("original skip_dir: ", getValueString("skip_dir"));
+		log.vdebug("resetting skip_dir");
+		setValueString("skip_dir", defaultSkipDir);
+		log.vdebug("reset skip_dir: ", getValueString("skip_dir"));
+	}
 }
 
 void outputLongHelp(Option[] opt)
 {
 	auto argsNeedingOptions = [
+		"--auth-files",
+		"--auth-response",
 		"--confdir",
 		"--create-directory",
 		"--create-share-link",
@@ -712,12 +756,15 @@ void outputLongHelp(Option[] opt)
 		"--get-O365-drive-id",
 		"--log-dir",
 		"--min-notify-changes",
+		"--modified-by",
 		"--monitor-interval",
 		"--monitor-log-frequency",
 		"--monitor-fullscan-frequency",
 		"--remove-directory",
 		"--single-directory",
+		"--skip-dir",
 		"--skip-file",
+		"--skip-size",
 		"--source-directory",
 		"--syncdir",
 		"--user-agent" ];

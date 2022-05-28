@@ -1,7 +1,7 @@
 # Run the OneDrive Client for Linux under Docker
 This client can be run as a Docker container, with 3 available options for you to choose from:
-1.  Container based on CentOS 7 - Docker Tag: latest
-2.  Container based on Debian Stretch - Docker Tag: stretch
+1.  Container based on Fedora 35 - Docker Tag: latest
+2.  Container based on Debian 11 - Docker Tag: debian
 3.  Container based on Alpine Linux - Docker Tag: alpine
 
 These containers offer a simple monitoring-mode service for the OneDrive Client for Linux.
@@ -10,8 +10,7 @@ The instructions below have been validated on:
 *   Red Hat Enterprise Linux 8.x 
 *   Ubuntu Server 20.04
 
-The instructions below will utilise the 'latest' tag, however this can be substituted for 'stretch' or 'alpine' if desired.
-
+The instructions below will utilise the 'latest' tag, however this can be substituted for 'debian' or 'alpine' if desired.
 
 ## Basic Setup
 ### 0. Install docker using your distribution platform's instructions
@@ -173,13 +172,15 @@ docker run -it --restart unless-stopped --name onedrive_Work -v onedrive_conf_Wo
 If you are experienced with docker and onedrive, you can use the following script:
 
 ```bash
-# Update ONEDRIVE_DATA_DIR with correct existing OneDrive directory path
+# Update ONEDRIVE_DATA_DIR with correct OneDrive directory path
 ONEDRIVE_DATA_DIR="${HOME}/OneDrive"
+# Create directory if non-existant
+mkdir -p ${ONEDRIVE_DATA_DIR} 
 
 firstRun='-d'
 docker pull driveone/onedrive:latest
-docker inspect onedrive_conf > /dev/null || { docker volume create onedrive_conf; firstRun='-it'; }
-docker inspect onedrive > /dev/null && docker rm -f onedrive
+docker inspect onedrive_conf > /dev/null 2>&1 || { docker volume create onedrive_conf; firstRun='-it'; }
+docker inspect onedrive > /dev/null 2>&1 && docker rm -f onedrive
 docker run $firstRun --restart unless-stopped --name onedrive -v onedrive_conf:/onedrive/conf -v "${ONEDRIVE_DATA_DIR}:/onedrive/data" driveone/onedrive:latest
 ```
 
@@ -195,6 +196,7 @@ docker run $firstRun --restart unless-stopped --name onedrive -v onedrive_conf:/
 | <B>ONEDRIVE_RESYNC</B> | Controls "--resync" switch on onedrive sync. Default is 0 | 1 |
 | <B>ONEDRIVE_DOWNLOADONLY</B> | Controls "--download-only" switch on onedrive sync. Default is 0 | 1 |
 | <B>ONEDRIVE_LOGOUT</B> | Controls "--logout" switch. Default is 0 | 1 |
+| <B>ONEDRIVE_REAUTH</B> | Controls "--reauth" switch. Default is 0 | 1 |
 | <B>ONEDRIVE_AUTHFILES</B> | Controls "--auth-files" option. Default is "" | "authUrl:responseUrl" |
 | <B>ONEDRIVE_AUTHRESPONSE</B> | Controls "--auth-response" option. Default is "" | See [here](https://github.com/abraunegg/onedrive/blob/master/docs/USAGE.md#authorize-the-application-with-your-onedrive-account) |
 
@@ -251,14 +253,14 @@ docker build . -t local-onedrive -f contrib/docker/Dockerfile
 ```
 
 There are alternate, smaller images available by building
-Dockerfile-stretch or Dockerfile-alpine.  These [multi-stage builder
+Dockerfile-debian or Dockerfile-alpine.  These [multi-stage builder
 pattern](https://docs.docker.com/develop/develop-images/multistage-build/)
 Dockerfiles require Docker version at least 17.05.
 
-#### How to build and run a custom Docker image based on Debian Stretch
+#### How to build and run a custom Docker image based on Debian
 ``` bash
-docker build . -t local-ondrive-stretch -f contrib/docker/Dockerfile-stretch
-docker container run -v onedrive_conf:/onedrive/conf -v "${ONEDRIVE_DATA_DIR}:/onedrive/data" local-ondrive-stretch:latest
+docker build . -t local-ondrive-debian -f contrib/docker/Dockerfile-debian
+docker container run -v onedrive_conf:/onedrive/conf -v "${ONEDRIVE_DATA_DIR}:/onedrive/data" local-ondrive-debian:latest
 ```
 
 #### How to build and run a custom Docker image based on Alpine Linux
@@ -275,12 +277,12 @@ Compatible with:
 *    Raspberry Pi 3
 *    Raspberry Pi 4
 ``` bash
-docker build . -t local-onedrive-rpi -f contrib/docker/Dockerfile-rpi
-docker container run -v onedrive_conf:/onedrive/conf -v "${ONEDRIVE_DATA_DIR}:/onedrive/data" local-ondrive-rpi:latest
+docker build . -t local-onedrive-armhf -f contrib/docker/Dockerfile-debian
+docker container run -v onedrive_conf:/onedrive/conf -v "${ONEDRIVE_DATA_DIR}:/onedrive/data" local-onedrive-armhf:latest
 ```
 
 #### How to build and run a custom Docker image for AARCH64 Platforms
 ``` bash
-docker build . -t local-onedrive-aarch64 -f contrib/docker/Dockerfile-aarch64
+docker build . -t local-onedrive-aarch64 -f contrib/docker/Dockerfile-debian
 docker container run -v onedrive_conf:/onedrive/conf -v "${ONEDRIVE_DATA_DIR}:/onedrive/data" local-onedrive-aarch64:latest
 ```

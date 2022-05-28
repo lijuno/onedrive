@@ -23,11 +23,14 @@
     + [skip_dir](#skip_dir)
     + [skip_file](#skip_file)
     + [skip_dotfiles](#skip_dotfiles)
-    + [skip_symlinks](#skip_symlinks)
     + [monitor_interval](#monitor_interval)
+    + [monitor_fullscan_frequency](#monitor_fullscan_frequency)
     + [min_notify_changes](#min_notify_changes)
     + [operation_timeout](#operation_timeout)
-    + [Selective sync via 'sync_list' file](#selective-sync-via-sync_list-file)
+  * [Performing a --resync](#performing-a---resync)
+  * [Performing a --force-sync without a --resync or changing your configuration](#performing-a---force-sync-without-a---resync-or-changing-your-configuration)
+  * [Handling Symbolic Links](#handling-symbolic-links)
+  * [Selective sync via 'sync_list' file](#selective-sync-via-sync_list-file)
   * [Configuring the client for 'single tenant application' use](#configuring-the-client-for-single-tenant-application-use)
   * [Configuring the client to use older 'skilion' application identifier](#configuring-the-client-to-use-older-skilion-application-identifier)
   * [How to 'skip' directories from syncing?](#how-to-skip-directories-from-syncing)
@@ -86,6 +89,8 @@ If your system utilises curl >= 7.62.0 curl defaults to prefer HTTP/2 over HTTP/
 ### Authorize the application with your OneDrive Account
 After installing the application you must authorize the application with your OneDrive Account. This is done by running the application without any additional command switches.
 
+Note that some companies require to explicitly add this app in [Microsoft MyApps portal](https://myapps.microsoft.com/). To add an (approved) app to your apps, click on the ellipsis in the top-right corner and choose "Request new apps". On the next page you can add this app. If its not listed, you should request through your IT department.
+
 You will be asked to open a specific URL by using your web browser where you will have to login into your Microsoft Account and give the application the permission to access your files. After giving permission to the application, you will be redirected to a blank page. Copy the URI of the blank page into the application.
 ```text
 [user@hostname ~]$ onedrive
@@ -109,7 +114,7 @@ Enter the response uri: https://login.microsoftonline.com/common/oauth2/nativecl
 
 Application has been successfully authorised, however no additional command switches were provided.
 
-Please use --help for further assistance in regards to running this application.
+Please use 'onedrive --help' for further assistance in regards to running this application.
 ```
 
 ### Show your configuration
@@ -298,7 +303,7 @@ ERROR: OneDrive returned a 'HTTP 401 Unauthorized' - Cannot Initialize Sync Engi
 ```
 To re-authorise the client, follow the steps below:
 1.   If running the client as a service (init.d or systemd), stop the service
-2.   Run the command `onedrive --logout`. This will clean up the previous authorisation, and will prompt you to re-authorise as per initial configuration.
+2.   Run the command `onedrive --reauth`. This will clean up the previous authorisation, and will prompt you to re-authorise the client as per initial configuration.
 3.   Restart the client if running as a service or perform a manual sync
 
 The application will now sync with OneDrive with the new credentials.
@@ -316,7 +321,7 @@ If you want to change the defaults, you can copy and edit the included config fi
 **Example:**
 ```text
 mkdir -p ~/.config/onedrive
-cp ./config ~/.config/onedrive/config
+wget https://raw.githubusercontent.com/abraunegg/onedrive/master/config -O ~/.config/onedrive/config
 nano ~/.config/onedrive/config
 ```
 This file does not get created by default, and should only be created if you want to change the 'default' operational parameters.
@@ -354,7 +359,7 @@ See the [config](https://raw.githubusercontent.com/abraunegg/onedrive/master/con
 # dry_run = "false"
 # min_notify_changes = "5"
 # monitor_log_frequency = "5"
-# monitor_fullscan_frequency = "10"
+# monitor_fullscan_frequency = "12"
 # sync_root_files = "false"
 # classify_as_big_delete = "1000"
 # user_agent = ""
@@ -362,6 +367,7 @@ See the [config](https://raw.githubusercontent.com/abraunegg/onedrive/master/con
 # skip_dir_strict_match = "false"
 # application_id = ""
 # resync = "false"
+# resync_auth = "false"
 # bypass_data_preservation = "false"
 # azure_ad_endpoint = ""
 # azure_tenant_id = "common"
@@ -378,11 +384,12 @@ See the [config](https://raw.githubusercontent.com/abraunegg/onedrive/master/con
 # webhook_renewal_interval = "43200"
 ```
 
-
 ### 'config' file configuration examples:
 The below are 'config' file examples to assist with configuration of the 'config' file:
 
 #### sync_dir
+Configure your local sync directory location.
+
 Example:
 ```text
 # When changing a config option below, remove the '#' from the start of the line
@@ -408,7 +415,7 @@ The following are directory and file default permissions for any new directory o
 *   Directories: 700 - This provides the following permissions: `drwx------`
 *   Files: 600 - This provides the following permissions: `-rw-------`
 
-To change the default permissions, update the following 2 configuration options with the required permissions. Utilise [Unix Permissions Calculator](http://permissions-calculator.org/) to assist in determining the required permissions.
+To change the default permissions, update the following 2 configuration options with the required permissions. Utilise the [Unix Permissions Calculator](https://chmod-calculator.com/) to assist in determining the required permissions.
 
 ```text
 # When changing a config option below, remove the '#' from the start of the line
@@ -424,6 +431,12 @@ sync_file_permissions = "600"
 **Important:** Special permission bits (setuid, setgid, sticky bit) are not supported. Valid permission values are from `000` to `777` only.
 
 #### skip_dir
+This option is used to 'skip' certain directories and supports pattern matching.
+
+Patterns are case insensitive. `*` and `?` [wildcards characters](https://technet.microsoft.com/en-us/library/bb490639.aspx) are supported. Use `|` to separate multiple patterns.
+
+**Important:** Entries under `skip_dir` are relative to your `sync_dir` path.
+
 Example:
 ```text
 # When changing a config option below, remove the '#' from the start of the line
@@ -435,9 +448,6 @@ Example:
 skip_dir = "Desktop|Documents/IISExpress|Documents/SQL Server Management Studio|Documents/Visual Studio*|Documents/WindowsPowerShell"
 # log_dir = "/var/log/onedrive/"
 ```
-Patterns are case insensitive. `*` and `?` [wildcards characters](https://technet.microsoft.com/en-us/library/bb490639.aspx) are supported. Use `|` to separate multiple patterns.
-
-**Important:** Entries under `skip_dir` are relative to your `sync_dir` path.
 
 **Note:** The `skip_dir` can be specified multiple times, for example:
 ```text
@@ -453,17 +463,8 @@ skip_dir = "SomeDir|OtherDir|ThisDir|ThatDir|/Path/To/A/Directory|/Another/Path/
 **Note:** After changing `skip_dir`, you must perform a full re-synchronization by adding `--resync` to your existing command line - for example: `onedrive --synchronize --resync`
 
 #### skip_file
-Example:
-```text
-# When changing a config option below, remove the '#' from the start of the line
-# For explanations of all config options below see docs/USAGE.md or the man page.
-#
-# sync_dir = "~/OneDrive"
-skip_file = "~*|Documents/OneNote*|Documents/config.xlaunch|myfile.ext"
-# monitor_interval = "300"
-# skip_dir = ""
-# log_dir = "/var/log/onedrive/"
-```
+This option is used to 'skip' certain files and supports pattern matching.
+
 Patterns are case insensitive. `*` and `?` [wildcards characters](https://technet.microsoft.com/en-us/library/bb490639.aspx) are supported. Use `|` to separate multiple patterns.
 
 Files can be skipped in the following fashion:
@@ -477,6 +478,18 @@ By default, the following files will be skipped:
 *   Files that end in .tmp
 
 **Important:** Do not use a skip_file entry of `.*` as this will prevent correct searching of local changes to process.
+
+Example:
+```text
+# When changing a config option below, remove the '#' from the start of the line
+# For explanations of all config options below see docs/USAGE.md or the man page.
+#
+# sync_dir = "~/OneDrive"
+skip_file = "~*|Documents/OneNote*|Documents/config.xlaunch|myfile.ext"
+# monitor_interval = "300"
+# skip_dir = ""
+# log_dir = "/var/log/onedrive/"
+```
 
 **Note:** The `skip_file` can be specified multiple times, for example:
 ```text
@@ -492,6 +505,8 @@ skip_file = "~*|.~*|*.tmp|*.swp|*.blah|never_sync.file"
 **Note:** after changing `skip_file`, you must perform a full re-synchronization by adding `--resync` to your existing command line - for example: `onedrive --synchronize --resync`
 
 #### skip_dotfiles
+Setting this to `"true"` will skip all .files and .folders while syncing.
+
 Example:
 ```text
 # skip_symlinks = "false"
@@ -500,20 +515,12 @@ skip_dotfiles = "true"
 # dry_run = "false"
 # monitor_interval = "300"
 ```
-Setting this to `"true"` will skip all .files and .folders while syncing.
-
-#### skip_symlinks
-Example:
-```text
-# local_first = "false"
-# no_remote_delete = "false"
-skip_symlinks = "true"
-# debug_https = "false"
-# skip_dotfiles = "false"
-```
-Setting this to `"true"` will skip all symlinks while syncing.
 
 #### monitor_interval
+The monitor interval is defined as the wait time 'between' sync's when running in monitor mode. When this interval expires, the client will check OneDrive for changes online, performing data integrity checks and scanning the local 'sync_dir' for new content.
+
+By default without configuration, 'monitor_interval' is set to 300 seconds. Setting this value to 600 will run the sync process every 10 minutes.
+
 Example:
 ```text
 # skip_dotfiles = "false"
@@ -522,29 +529,116 @@ monitor_interval = "600"
 # min_notify_changes = "5"
 # monitor_log_frequency = "5"
 ```
-The monitor interval is defined as the wait time 'between' sync's when running in monitor mode. By default without configuration, the monitor_interval is set to 300 seconds. Setting this value to 600 will run the sync process every 10 minutes.
+
+#### monitor_fullscan_frequency
+This configuration option controls the number of 'monitor_interval' iterations between when a full scan of your data is performed to ensure data integrity and consistency.
+
+By default without configuration, 'monitor_fullscan_frequency' is set to 12. In this default state, this means that a full scan is performed every 'monitor_interval' x 'monitor_fullscan_frequency' = 3600 seconds. This is only applicable when running in --monitor mode.
+
+Setting this value to 24 means that the full scan of OneDrive and checking the integrity of the data stored locally will occur every 2 hours (assuming 'monitor_interval' is set to 300 seconds):
+
+Example:
+```text
+# min_notify_changes = "5"
+# monitor_log_frequency = "5"
+monitor_fullscan_frequency = "24"
+# sync_root_files = "false"
+# classify_as_big_delete = "1000"
+```
+
+**Note:** When running in --monitor mode, at application start-up, a full scan will be performed to ensure data integrity. This option has zero effect when running the application in --synchronize mode and a full scan will always be performed.
 
 #### min_notify_changes
+This option defines the minimum number of pending incoming changes necessary to trigger a desktop notification. This allows controlling the frequency of notifications.
+
 Example:
 ```text
 # dry_run = "false"
 # monitor_interval = "300"
 min_notify_changes = "50"
 # monitor_log_frequency = "5"
-# monitor_fullscan_frequency = "10"
+# monitor_fullscan_frequency = "12"
 ```
-This option defines the minimum number of pending incoming changes necessary to trigger a desktop notification. This allows controlling the frequency of notifications.
 
 #### operation_timeout
+Operation Timeout is the maximum amount of time (seconds) a file operation is allowed to take. This includes DNS resolution, connecting, data transfer, etc.
+
 Example:
 ```text
 # sync_file_permissions = "600"
 # rate_limit = "131072"
 operation_timeout = "3600"
 ```
-Operation Timeout is the maximum amount of time (seconds) a file operation is allowed to take. This includes DNS resolution, connecting, data transfer, etc.
 
-#### Selective sync via 'sync_list' file
+### Performing a --resync
+If you modify any of the following configuration items, you will be required to perform a `--resync` to ensure your client is syncing your data with the updated configuration:
+*   sync_dir
+*   skip_dir
+*   skip_file
+*   drive_id
+*   Modifying sync_list
+*   Modifying business_shared_folders
+
+Additionally, you may choose to perform a `--resync` if you feel that this action needs to be taken to ensure your data is in sync. If you are using this switch simply because you dont know the sync status, you can query the actual sync status using `--display-sync-status`.
+
+When using `--resync`, the following warning and advice will be presented:
+```text
+The use of --resync will remove your local 'onedrive' client state, thus no record will exist regarding your current 'sync status'
+This has the potential to overwrite local versions of files with potentially older versions downloaded from OneDrive which can lead to data loss
+If in-doubt, backup your local data first before proceeding with --resync
+
+Are you sure you wish to proceed with --resync? [Y/N]
+```
+
+To proceed with using `--resync`, you must type 'y' or 'Y' to allow the application to continue.
+
+**Note:** It is highly recommended to only use `--resync` if the application advises you to use it. Do not just blindly set the application to start with `--resync` as the default option.
+
+**Note:** In some automated environments (and it is 100% assumed you *know* what you are doing because of automation), in order to avoid this 'proceed with acknowledgement' requirement, add `--resync-auth` to automatically acknowledge the prompt.
+
+### Performing a --force-sync without a --resync or changing your configuration
+In some cases and situations, you may have configured the application to skip certain files and folders using 'skip_file' and 'skip_dir' configuration. You then may have a requirement to actually sync one of these items, but do not wish to modify your configuration, nor perform an entire `--resync` twice.
+
+The `--force-sync` option allows you to sync a specific directory, ignoring your 'skip_file' and 'skip_dir' configuration and negating the requirement to perform a `--resync`
+
+In order to use this option, you must run the application manually in the following manner:
+```text
+onedrive --synchronize --single-directory '<directory_to_sync>' --force-sync <add any other options needed or required>
+```
+
+When using `--force-sync`, the following warning and advice will be presented:
+```text
+WARNING: Overriding application configuration to use application defaults for skip_dir and skip_file due to --synchronize --single-directory --force-sync being used
+
+The use of --force-sync will reconfigure the application to use defaults. This may have untold and unknown future impacts.
+By proceeding in using this option you accept any impacts including any data loss that may occur as a result of using --force-sync.
+
+Are you sure you wish to proceed with --force-sync [Y/N] 
+```
+
+To proceed with using `--force-sync`, you must type 'y' or 'Y' to allow the application to continue.
+
+### Handling Symbolic Links
+Microsoft OneDrive has zero concept or understanding of symbolic links, and attempting to upload a symbolic link to Microsoft OneDrive generates a platform API error. All data (files and folders) that are uploaded to OneDrive must be whole files or actual directories.
+
+As such, there are only two methods to support symbolic links with this client:
+1. Follow the Linux symbolic link and upload what ever the link is pointing at to OneDrive. This is the default behaviour.
+2. Skip symbolic links by configuring the application to do so. In skipping, no data, no link, no reference is uploaded to OneDrive.
+
+To skip symbolic links, edit your configuration as per below:
+
+```text
+# local_first = "false"
+# no_remote_delete = "false"
+skip_symlinks = "true"
+# debug_https = "false"
+# skip_dotfiles = "false"
+```
+Setting this to `"true"` will configure the client to skip all symbolic links while syncing.
+
+The default setting is `"false"` which will sync the whole folder structure referenced by the symbolic link, duplicating the contents on OneDrive in the place where the symbolic link is.
+
+### Selective sync via 'sync_list' file
 Selective sync allows you to sync only specific files and directories.
 To enable selective sync create a file named `sync_list` in `~/.config/onedrive`.
 Each line of the file represents a relative path from your `sync_dir`. All files and directories not matching any line of the file will be skipped during all operations.
@@ -629,7 +723,7 @@ application_id = "22c49a0d-d21c-4792-aed1-8f163c982546"
 ```
 **Note:** The application will now use the older 'skilion' client identifier, however this may increase your chances of getting a OneDrive 429 error.
 
-**Note:** After changing the 'application_id' you will need to restart any 'onedrive' process you have running, and potentially issue a `--logout` to re-auth the client with this updated application ID.
+**Note:** After changing the 'application_id' you will need to restart any 'onedrive' process you have running, and potentially issue a `--reauth` to re-authenticate the client with this updated application ID.
 
 
 ### How to 'skip' directories from syncing?
@@ -716,22 +810,22 @@ webhook_enabled = "true"
 webhook_public_url = "<public-facing url to reach your webhook>"
 ```
 
-Setting `webhook_enabled` to `true` enables the webhook in 'monitor' mode. The onedrive process will listen for incoming updates at a configurable endpoint, which defaults to `0.0.0.0:8888`. The `webhook_public_url` must be set to an public-facing url for Microsoft to send updates to your webhook. If your host is directly exposed to the Internet, the `webhook_public_url` can be set to `http://<your_host>:8888/` to match the default endpoint. However, the recommended approach is to configure a reverse proxy like nginx.
+Setting `webhook_enabled` to `true` enables the webhook in 'monitor' mode. The onedrive process will listen for incoming updates at a configurable endpoint, which defaults to `0.0.0.0:8888`. The `webhook_public_url` must be set to an public-facing url for Microsoft to send updates to your webhook. If your host is directly exposed to the Internet, the `webhook_public_url` can be set to `http://<your_host_ip>:8888/` to match the default endpoint. However, the recommended approach is to configure a reverse proxy like nginx.
+
+**Note:** A valid HTTPS certificate is required for your public-facing URL if using nginx.
 
 For example, below is a nginx config snippet to proxy traffic into the webhook:
 
 ```
-http {
-  server {
-    listen 80;
-    location /webhooks/onedrive {
-      proxy_pass http://127.0.0.1:8888;
-    }
-  }
+server {
+	listen 80;
+	location /webhooks/onedrive {
+		proxy_pass http://127.0.0.1:8888;
+	}
 }
 ```
 
-With nginx running, you can configure `webhook_public_url` to `http://<your_host>/webhooks/onedrive`.
+With nginx running, you can configure `webhook_public_url` to `https://<your_host>/webhooks/onedrive`.
 
 ### More webhook configuration options
 
@@ -778,6 +872,7 @@ tail -f /var/log/onedrive/<username>.onedrive.log
 To change what 'user' the client runs under (by default root), manually edit the init.d service file and modify `daemon --user root onedrive_service.sh` for the correct user.
 
 ### OneDrive service running as root user via systemd (Arch, Ubuntu, Debian, OpenSuSE, Fedora)
+First, su to root using `su - root`, then enable the systemd service:
 ```text
 systemctl --user enable onedrive
 systemctl --user start onedrive
@@ -1047,6 +1142,8 @@ Options:
       Force the deletion of data when a 'big delete' is detected
   --force-http-2
       Force the use of HTTP/2 for all operations where applicable
+  --force-sync
+      Force a synchronization of a specific folder, only when using --single-directory and ignoring all non-default skip_dir and skip_file rules
   --get-O365-drive-id ARG
       Query and return the Office 365 Drive ID for a given Office 365 SharePoint Shared Library
   --get-file-link ARG
@@ -1063,6 +1160,8 @@ Options:
       Logout the current user
   --min-notify-changes ARG
       Minimum number of pending incoming changes necessary to trigger a desktop notification
+  --modified-by ARG
+      Display the last modified by details of a given path
   --monitor -m
       Keep monitoring for local and remote changes
   --monitor-fullscan-frequency ARG
@@ -1077,12 +1176,16 @@ Options:
       Maximum amount of time (in seconds) an operation is allowed to take
   --print-token
       Print the access token, useful for debugging
+  --reauth
+      Reauthenticate the client with OneDrive
   --remove-directory ARG
       Remove a directory on OneDrive - no sync will be performed.
   --remove-source-files
       Remove source file after successful transfer to OneDrive when using --upload-only
   --resync
       Forget the last saved state, perform a full sync
+  --resync-auth
+      Approve the use of performing a --resync action
   --single-directory ARG
       Specify a single local directory within the OneDrive root to sync.
   --skip-dir ARG
